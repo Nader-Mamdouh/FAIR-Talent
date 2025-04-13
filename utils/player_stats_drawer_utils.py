@@ -1,105 +1,116 @@
 import numpy as np
 import cv2
 import csv
-def draw_player_stats(output_video_frames, player_stats, player_1, player_2):
+import pandas as pd
+
+def get_video_fps(video_path):
+    cap = cv2.VideoCapture(video_path)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    cap.release()
+    return fps
+
+def calculate_average_speed(player_stats, player_1, player_2):
+    player_1_avg_speed = player_stats[f'player_{player_1}_last_player_speed'].replace(0, np.nan).mean()
+    player_2_avg_speed = player_stats[f'player_{player_2}_last_player_speed'].replace(0, np.nan).mean()
+
+    player_1_avg_shot_speed = player_stats[f'player_{player_1}_last_shot_speed'].replace(0, np.nan).mean()
+    player_2_avg_shot_speed = player_stats[f'player_{player_2}_last_shot_speed'].replace(0, np.nan).mean()
+
+    return player_1_avg_speed, player_2_avg_speed, player_1_avg_shot_speed, player_2_avg_shot_speed
+
+def draw_player_stats(output_video_frames, player_stats, player_1, player_2, FPS):
+    player_stats["player_1_acceleration"] = player_stats[f"player_{player_1}_last_player_speed"].diff().fillna(0)
+    player_stats["player_2_acceleration"] = player_stats[f"player_{player_2}_last_player_speed"].diff().fillna(0)
+
+    player_stats["player_1_shot_inconsistency"] = (
+        player_stats[f"player_{player_1}_last_shot_speed"]
+        .dropna()
+        .rolling(5, min_periods=1)
+        .std()
+        .fillna(0)
+    )    
+    player_stats["player_2_shot_inconsistency"] = (
+        player_stats[f"player_{player_2}_last_shot_speed"]
+        .dropna()
+        .rolling(5, min_periods=1)
+        .std()
+        .fillna(0)
+    )
+
+    frame_time = 1 / FPS  
+
+    player_stats["player_1_distance_covered"] = (player_stats[f"player_{player_1}_last_player_speed"] * frame_time).cumsum()
+    player_stats["player_2_distance_covered"] = (player_stats[f"player_{player_2}_last_player_speed"] * frame_time).cumsum()
+
+    player_stats["player_1_rally_contribution"] = (player_stats[f"player_{player_1}_last_shot_speed"].diff() > 0).astype(int).cumsum()
+    player_stats["player_2_rally_contribution"] = (player_stats[f"player_{player_2}_last_shot_speed"].diff() > 0).astype(int).cumsum()
+
+    player_stats["player_1_total_shots"] = (player_stats[f"player_{player_1}_last_shot_speed"]
+                                        .diff()
+                                        .gt(0)
+                                        .cumsum())   
+     
+    player_stats["player_2_total_shots"] = (player_stats[f"player_{player_2}_last_shot_speed"]
+                                        .diff()
+                                        .gt(0)
+                                        .cumsum())
+
+    player_stats["player_1_rally_percentage"] = (player_stats["player_1_rally_contribution"] / player_stats["player_1_total_shots"]).fillna(0) * 100
+    player_stats["player_2_rally_percentage"] = (player_stats["player_2_rally_contribution"] / player_stats["player_2_total_shots"]).fillna(0) * 100
+
     for index, row in player_stats.iterrows():
         if index >= len(output_video_frames):
             continue  
 
-        # Handle NaN values to prevent formatting errors
         def safe_value(val):
             return val if not np.isnan(val) else 0  
 
-        # Store extracted values in a dictionary
         player_stats_dict = {
-            "shot_speed_1": safe_value(row[f'player_{player_1}_last_shot_speed']),
-            "shot_speed_2": safe_value(row[f'player_{player_2}_last_shot_speed']),
-            "speed_1": safe_value(row[f'player_{player_1}_last_player_speed']),
-            "speed_2": safe_value(row[f'player_{player_2}_last_player_speed']),
-            "avg_shot_speed_1": safe_value(row[f'player_{player_1}_average_shot_speed']),
-            "avg_shot_speed_2": safe_value(row[f'player_{player_2}_average_shot_speed']),
-            "avg_speed_1": safe_value(row[f'player_{player_1}_average_player_speed']),
-            "avg_speed_2": safe_value(row[f'player_{player_2}_average_player_speed']),
+            "shot_speed_1": safe_value(row[f'player_1_last_shot_speed']),
+            "shot_speed_2": safe_value(row[f'player_2_last_shot_speed']),
+            "speed_1": safe_value(row[f'player_1_last_player_speed']),
+            "speed_2": safe_value(row[f'player_2_last_player_speed']),
+            "acceleration_1": safe_value(row["player_1_acceleration"]),
+            "acceleration_2": safe_value(row["player_2_acceleration"]),
+            "shot_inconsistency_1": safe_value(row["player_1_shot_inconsistency"]),
+            "shot_inconsistency_2": safe_value(row["player_2_shot_inconsistency"]),
+            "distance_covered_1": safe_value(row["player_1_distance_covered"]),
+            "distance_covered_2": safe_value(row["player_2_distance_covered"]),
+            "rally_contribution_1": safe_value(row["player_1_rally_contribution"]),
+            "rally_contribution_2": safe_value(row["player_2_rally_contribution"]),
         }
 
-        frame = output_video_frames[index]
-        shapes = np.zeros_like(frame, np.uint8)
+    return player_stats
 
-        # Rectangle dimensions
-        width = 250
-        height = 130
-        start_x = frame.shape[1] - 400
-        start_y = frame.shape[0] - 500
-        end_x = start_x + width
-        end_y = start_y + height
+import pandas as pd
 
-        # Draw overlay
-        overlay = frame.copy()
-        cv2.rectangle(overlay, (start_x, start_y), (end_x, end_y), (0, 0, 0), -1)
-        cv2.addWeighted(overlay, 0.5, frame, 0.5, 0, frame)
+def generate_report_max_only(player_stats, player_1, player_2):
+    avg_speed_1, avg_speed_2, avg_shot_speed_1, avg_shot_speed_2 = calculate_average_speed(player_stats, player_1, player_2)
+    max_stats = {
+        f"player_{player_1}_max_shot_speed": [player_stats['player_1_last_shot_speed'].max()],
+        f"player_{player_2}_max_shot_speed": [player_stats['player_2_last_shot_speed'].max()],
+        f"player_{player_1}_avg_shot_speed": [avg_shot_speed_1],
+        f"player_{player_2}_avg_shot_speed": [avg_shot_speed_2],
+        f"player_{player_1}_max_speed": [player_stats['player_1_last_player_speed'].max()],
+        f"player_{player_2}_max_speed": [player_stats['player_2_last_player_speed'].max()],
+        f"player_{player_1}_avg_speed": [avg_speed_1],
+        f"player_{player_2}_avg_speed": [avg_speed_2],
+        f"player_{player_1}_max_acceleration": [player_stats["player_1_acceleration"].max()],
+        f"player_{player_2}_max_acceleration": [player_stats["player_2_acceleration"].max()],
+        f"player_{player_1}_max_shot_inconsistency": [player_stats["player_1_shot_inconsistency"].max()],
+        f"player_{player_2}_max_shot_inconsistency": [player_stats["player_2_shot_inconsistency"].max()],
+        f"player_{player_1}_max_distance_covered": [player_stats["player_1_distance_covered"].max()],
+        f"player_{player_2}_max_distance_covered": [player_stats["player_2_distance_covered"].max()],
+        f"player_{player_1}_max_rally_contribution": [player_stats["player_1_rally_contribution"].max()],
+        f"player_{player_2}_max_rally_contribution": [player_stats["player_2_rally_contribution"].max()],
+        f"player_{player_1}_total_shots": [player_stats["player_1_total_shots"].max()],
+        f"player_{player_2}_total_shots": [player_stats["player_2_total_shots"].max()],
+        f"player_{player_1}_max_rally_percentage": [player_stats["player_1_rally_percentage"].max()],
+        f"player_{player_2}_max_rally_percentage": [player_stats["player_2_rally_percentage"].max()],
+    }
 
-        # Header
-        output_video_frames[index] = cv2.putText(frame, f"     Player {player_1}     Player {player_2}", (start_x+80, start_y+30), 
-                                                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-
-        # Stats
-        stats = [
-            ("Shot Speed", player_stats_dict["shot_speed_1"], player_stats_dict["shot_speed_2"]),
-            ("Player Speed", player_stats_dict["speed_1"], player_stats_dict["speed_2"]),
-            ("Avg. S. Speed", player_stats_dict["avg_shot_speed_1"], player_stats_dict["avg_shot_speed_2"]),
-            ("Avg. P. Speed", player_stats_dict["avg_speed_1"], player_stats_dict["avg_speed_2"])
-        ]
-
-        for i, (label, p1_value, p2_value) in enumerate(stats):
-            y_offset = start_y + 80 + (i * 40)  # Adjust vertical spacing
-            output_video_frames[index] = cv2.putText(frame, label, (start_x+10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
-            text = f"{p1_value:.1f} km/h    {p2_value:.1f} km/h"
-            output_video_frames[index] = cv2.putText(frame, text, (start_x+130, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+    df = pd.DataFrame(max_stats)
     
-    output_file="game_report.csv"
-    with open(output_file, mode="w", newline="") as file:
-        writer = csv.writer(file)
-        writer.writerow(["Frame", f"Player {player_1} Shot Speed (km/h)", f"Player {player_2} Shot Speed (km/h)",
-                         f"Player {player_1} Player Speed (km/h)", f"Player {player_2} Player Speed (km/h)",
-                         f"Player {player_1} Avg Shot Speed (km/h)", f"Player {player_2} Avg Shot Speed (km/h)",
-                         f"Player {player_1} Avg Player Speed (km/h)", f"Player {player_2} Avg Player Speed (km/h)"])
-        
-        for index, row in player_stats.iterrows():
-            writer.writerow([
-                index,
-                row.get(f'player_{player_1}_last_shot_speed', 0),
-                row.get(f'player_{player_2}_last_shot_speed', 0),
-                row.get(f'player_{player_1}_last_player_speed', 0),
-                row.get(f'player_{player_2}_last_player_speed', 0),
-                row.get(f'player_{player_1}_average_shot_speed', 0),
-                row.get(f'player_{player_2}_average_shot_speed', 0),
-                row.get(f'player_{player_1}_average_player_speed', 0),
-                row.get(f'player_{player_2}_average_player_speed', 0),
-            ])
-    print(f"Game report saved to {output_file}")
-    
-    return output_video_frames
+    df.to_csv("max_game_report.csv", index=True)
 
-def generate_report(player_stats, player_1, player_2):
-    output_file="game_report.csv"
-    with open(output_file, mode="w", newline="") as file:
-        writer = csv.writer(file)
-        writer.writerow(["Frame", f"Player {player_1} Shot Speed (km/h)", f"Player {player_2} Shot Speed (km/h)",
-                         f"Player {player_1} Player Speed (km/h)", f"Player {player_2} Player Speed (km/h)",
-                         f"Player {player_1} Avg Shot Speed (km/h)", f"Player {player_2} Avg Shot Speed (km/h)",
-                         f"Player {player_1} Avg Player Speed (km/h)", f"Player {player_2} Avg Player Speed (km/h)"])
-        
-        for index, row in player_stats.iterrows():
-            writer.writerow([
-                index,
-                row.get(f'player_{player_1}_last_shot_speed', 0),
-                row.get(f'player_{player_2}_last_shot_speed', 0),
-                row.get(f'player_{player_1}_last_player_speed', 0),
-                row.get(f'player_{player_2}_last_player_speed', 0),
-                row.get(f'player_{player_1}_average_shot_speed', 0),
-                row.get(f'player_{player_2}_average_shot_speed', 0),
-                row.get(f'player_{player_1}_average_player_speed', 0),
-                row.get(f'player_{player_2}_average_player_speed', 0),
-            ])
-    print(f"Game report saved to {output_file}")
-    return output_file
+    return df
