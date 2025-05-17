@@ -1,7 +1,7 @@
 import pandas as pd
 import json
 
-# Thresholds
+# Updated thresholds for more realistic tennis values
 thresholds = {
     "max_shot_speed": {"High": 55, "Med": 51, "Low": 47},
     "avg_shot_speed": {"High": 49, "Med": 45, "Low": 41},
@@ -69,13 +69,6 @@ def calculate_player_scores(data):
                if col.startswith('player_1_') and col not in ['player_1_Score_Percentage', 'player_1_Total_Score']}
         }
 
-        player_2_data = {
-            "score_percentage": float(df['player_2_Score_Percentage'].iloc[0]),
-            "total_score": int(df['player_2_Total_Score'].iloc[0]),
-            **{col.replace('player_2_', ''): float(df[col].iloc[0]) 
-               for col in df.columns 
-               if col.startswith('player_2_') and col not in ['player_2_Score_Percentage', 'player_2_Total_Score']}
-        }
         return {
             "status": "success",
             "data": {

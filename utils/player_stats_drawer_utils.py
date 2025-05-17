@@ -80,7 +80,10 @@ def draw_player_stats(output_video_frames, player_stats, player_1, player_2, FPS
             "rally_contribution_2": safe_value(row["player_2_rally_contribution"]),
         }
 
-    return player_stats
+def safe_value(value):
+    if pd.isna(value) or np.isnan(value):
+        return 0.0
+    return float(value)
 
 import pandas as pd
 
@@ -111,6 +114,6 @@ def generate_report_max_only(player_stats, player_1, player_2):
 
     df = pd.DataFrame(max_stats)
     
-    df.to_csv("max_game_report.csv", index=True)
+    #df.to_csv("max_game_report.csv", index=True)
 
     return df
