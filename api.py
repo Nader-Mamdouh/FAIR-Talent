@@ -7,6 +7,11 @@ from main import process_video
 
 app = FastAPI()
 
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for Docker"""
+    return {"status": "healthy"}
+
 @app.post("/analyze-tennis/")
 async def analyze_tennis_video(video: UploadFile = File(...)):
     """Process video and return results immediately"""
