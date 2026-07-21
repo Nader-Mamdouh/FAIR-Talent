@@ -115,7 +115,7 @@ The FAIR platform API lives in `backend/FAIR.API/` (authentication, reports, cha
 ## Demo output
 
 Sample processed video:  
-https://github.com/Nader-Mamdouh/FAIR-Talent-Discovery/blob/main/Tennis%20Model.Ai/output_videos/output_video.avi
+https://github.com/Nader-Mamdouh/FAIR-Talent/blob/main/output_videos/output-video.avi
 
 ## Documentation
 
